@@ -26,7 +26,7 @@ public class Main {
 
     public static void main(String[] args) {
         //launch(args);
-        String fileName = "src/Gifreader/sample_1.gif";
+        String fileName = "src/Gifreader/sample_4.gif";
         File file = new File(fileName);
         GifReader gifReader = new GifReader(file);
     }
