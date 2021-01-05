@@ -4,7 +4,9 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 
 public class GifReader {
     //Attributes
@@ -44,6 +46,14 @@ public class GifReader {
     private int delayTime; //Two bytes
     private int transparentColorIndex; //1 byte
     private int blockTerminator; //1 byte, always 0x00
+
+    //Contents of Image Descriptor 10 bytes
+    private int imageSeparator; //1 byte, always 0x2C
+    private int imageLeft; //2 bytes
+    private int imageTop; //2 bytes
+    private int imageWidth; //2 bytes
+    private int imageHeight; //2 bytes
+    private String imagePackedField; //1 byte [0][0][0][00][000]
 
 
     public GifReader(File file) {
@@ -151,8 +161,63 @@ public class GifReader {
         //END of Graphics Control Extension
 
         //START of Image Descriptor 10 bytes
+        imageSeparator = bytes[ind]; //1 byte, always 0x2C
+        ind++;
+        imageLeft = read16(bytes, ind, 2); //2 bytes
+        ind += 2;
+        imageTop = read16(bytes, ind, 2); //2 bytes
+        ind += 2;
+        imageWidth = read16(bytes, ind, 2); //2 bytes
+        ind += 2;
+        imageHeight = read16(bytes, ind, 2); //2 bytes
+        ind += 2;
+        imagePackedField = Integer.toBinaryString(bytes[ind] & 255 | 256).substring(1); //Open this byte into 8 bits
+        ind++;
 
+        System.out.println("Image Separator = " + imageSeparator);
+        System.out.println("imageLeft = " + imageLeft);
+        System.out.printf("imageTop = " + imageTop);
+        System.out.println("Image width = " + imageWidth);
+        System.out.println("Image height = " + imageHeight);
+        System.out.println("Image packed field = " + imagePackedField);
+        System.out.println("CURRENT IND = " + ind);
         //END of Image Descriptor
+
+        //Local color table would be here, if there was 1 in previous data in image packedfield 1 leftmost bit
+
+        //START OF IMAGE DATA
+        int LZWminCodeSize = bytes[ind]; //Value used to defcode compressed output codes mincode 2 would be 2-12 bits
+        ind++;
+        //Data subblocks
+        int bytesToFollow = bytes[ind] & 0xff; //0x00-0xFF
+        ind++;
+        System.out.println("LZW minimum code size = " + LZWminCodeSize);
+        System.out.println("Bytes of image data to follow = " + bytesToFollow + " bytes");
+
+        String binaryStream = readStream(bytes, ind, bytesToFollow); //This comes out as 001100011... where values are read backwards = 4, 1, 6 etc
+        ind += bytesToFollow;
+
+        int length = LZWminCodeSize+1; //the initial binary length of value that will be read (3), increased whenever code = 2^(currentsize-1)
+        int[] output = decode(binaryStream, length);
+        //TODO take LWZ table sizes into consideration. and the fact that this only decodes one datablock. output = one datablock
+
+        for(int i=0; i<output.length; i++) {
+            int col = output[i];
+            Color color = colors[col];
+            String R = String.format("%03d", color.getRed());
+            String G = String.format("%03d", color.getGreen());
+            String B = String.format("%03d", color.getBlue());
+            if((i+1)%imageWidth==0) {
+                //System.out.println(output[i]);
+                System.out.println("|" + R + "," + G + "," +B + "|");
+            } else {
+                //System.out.print(output[i]);
+                System.out.print("|" + R + "," + G + "," +B + "|");
+            }
+        }
+
+
+        //END OF IMAGE DATA
     }
 
     private int read16(byte[] arr, int start, int size) {
@@ -177,6 +242,136 @@ public class GifReader {
         }
         System.out.println("Value of binary is " + val);
         return (int) val;
+    }
+
+    private String readStream(byte[] arr, int start, int size) {
+        int end = start+size;
+        int aa = 0;
+        StringBuilder hexString = new StringBuilder();
+        String byteString = "";
+        while(start < end) { //Read the bytes in byte order
+            aa++;
+            String nextByte = Integer.toBinaryString(arr[start] & 255 | 256).substring(1);
+            byteString = nextByte + byteString;
+
+            String nextHex = Integer.toHexString(arr[start] & 255 | 256).substring(1);
+            hexString.append(nextHex);
+
+            start++;
+        }
+        //flip bytestring
+        String flippedString = "";
+        char[] try1 = byteString.toCharArray();
+
+        for (int i = try1.length - 1; i >= 0; i--)
+            flippedString = flippedString + try1[i];
+
+        System.out.println("reading " + flippedString.length() + " bit input: " + flippedString);
+        System.out.println("reading " + hexString.length() + " bit input: " + hexString);
+
+
+        return flippedString;
+    }
+
+    private int readVal(String curBin) {
+        int curVal = 0;
+        //Turn code into int
+        int exp = 0;
+        //read the string backwards and sum into int
+        for(int i = 0; i < curBin.length(); i++) {
+            int bit = curBin.charAt(i)-'0';
+            if(bit==1) {
+                double inc = Math.pow(2, exp); //add the bit to the sum
+                curVal += inc;
+            }
+            exp++; //Increase the exponent
+        }
+        return curVal;
+    }
+
+    /**
+     * This algorithm takes the datablock in binary data and decodes the compressed binary into pixel color values and returns them in an array
+     * @param binaryStream
+     * @param length
+     * @return
+     */
+    private int[] decode(String binaryStream, int length) {
+        int nextFreeInTable = 6;
+        String[] table = new String[imageHeight*imageWidth];    //Table to store codes
+        //TODO construct the table elsewhere and send as parameter along with nextFree from lwz table
+        table[0] = "0,";
+        table[1] = "1,";
+        table[2] = "2,";
+        table[3] = "3,";
+        table[4] = "clear"; //clear
+        table[5] = "end";
+
+        String textput = "";
+        int start = 0;
+
+        String binCode = binaryStream.substring(start, start+length);
+        start = start + length; //Update index
+        int intCode = readVal(binCode); //#4
+
+        System.out.print(binCode + " ");
+        System.out.println(intCode);
+
+        //read again before loop
+        binCode = binaryStream.substring(start, start+length);
+        start = start + length; //Update index
+        intCode = readVal(binCode); //#1
+
+        System.out.print(binCode + " ");
+        System.out.println(intCode);
+        System.out.println("output: " + table[intCode]);
+        textput = textput+table[intCode];
+
+        int prevCode = intCode;
+
+        //Begin loop
+        while(!table[intCode].equals("end")) {
+
+            binCode = binaryStream.substring(start, (start+length)); //Read binary value from current index
+            intCode = readVal(binCode); //turn binary value into int value
+
+            System.out.print(binCode + " ");
+            System.out.println(intCode);
+            //is code in codetable?
+            if(table[intCode] != null) { //Yes
+                System.out.println("output: " + table[intCode]);
+                textput = textput+table[intCode];
+                String K = table[intCode].substring(0,2); //"0,"
+                table[nextFreeInTable] = table[prevCode]+K;
+                nextFreeInTable++; //update free slot
+            } else { //No
+                String K = table[prevCode].substring(0,2); //"0,"
+                System.out.println("output:" + table[prevCode]+K);
+                textput = textput+table[prevCode]+K;
+                table[nextFreeInTable] = table[prevCode]+K;
+                nextFreeInTable++;
+            }
+
+            //Update index
+            start = start + length;
+            prevCode = intCode;
+
+            //If now read code equals to 2^currentsize-1
+            if(nextFreeInTable-1 == (Math.pow(2, length)-1)) { //TODO instead of curVal you compare to the index of codetable(#7 for example)
+                //Update current code length to +1
+                System.out.println(nextFreeInTable-1 + " == " + "2^" + length + "-1 (" + (Math.pow(2, length)-1) + ")");
+                length = length+1;
+            }
+        }
+
+        int[] output = new int[imageHeight*imageWidth];
+        String[] et = textput.split(",");
+
+        for(int i=0; i<et.length-1; i++) {
+            output[i] = Integer.parseInt(et[i]);
+        }
+        System.out.println(Arrays.toString(output));
+
+        return output;
     }
 
 }
