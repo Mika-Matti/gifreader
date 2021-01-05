@@ -296,15 +296,25 @@ public class GifReader {
      * @return
      */
     private int[] decode(String binaryStream, int length) {
-        int nextFreeInTable = 6;
         String[] table = new String[imageHeight*imageWidth];    //Table to store codes
-        //TODO construct the table elsewhere and send as parameter along with nextFree from lwz table
-        table[0] = "0,";
-        table[1] = "1,";
-        table[2] = "2,";
-        table[3] = "3,";
-        table[4] = "clear"; //clear
-        table[5] = "end";
+        //TODO construct the table elsewhere and send as parameter along with nextFree from lwz table this table is for LWZMin 2 and there are 2-8 ones
+//        table[0] = "0,";      //Example structure of table with LWZ Min Code Size of 2
+//        table[1] = "1,";              // MIN      COLOR CODES     CLEAR CODE      EOI CODE
+//        table[2] = "2,";              // 2            0-3             4               5
+//        table[3] = "3,";              // 3            0-7             8               9
+//        table[4] = "clear"; //clear   // 4            0-15            16              17
+//        table[5] = "end";             // 5            0-31            32              33
+                                        // 6            0-63            64              65
+                                        // 7            0-127           128             129
+                                        // 8            0-255           256             257
+        for(int i=0; i<colors.length; i++) {
+            table[i] = String.valueOf(i) + ",";
+        }
+        int nextFreeInTable = colors.length;
+        table[nextFreeInTable] = "clear";
+        nextFreeInTable++;
+        table[nextFreeInTable] = "end";
+        nextFreeInTable++;
 
         String textput = "";
         int start = 0;
@@ -356,7 +366,7 @@ public class GifReader {
             prevCode = intCode;
 
             //If now read code equals to 2^currentsize-1
-            if(nextFreeInTable-1 == (Math.pow(2, length)-1)) { //TODO instead of curVal you compare to the index of codetable(#7 for example)
+            if(nextFreeInTable-1 == (Math.pow(2, length)-1)) {
                 //Update current code length to +1
                 System.out.println(nextFreeInTable-1 + " == " + "2^" + length + "-1 (" + (Math.pow(2, length)-1) + ")");
                 length = length+1;
