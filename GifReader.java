@@ -303,7 +303,7 @@ public class GifReader {
      */
     private int[] decode(String binaryStream, int length) {
         int orgLength = length;
-        String[] table = new String[imageHeight*imageWidth];    //Table to store codes
+        String[] table = new String[4096];    //Table to store codes
         //TODO clear table when output is "clear" => intcode = 4
 //        table[0] = "0,";      //Example structure of table with LWZ Min Code Size of 2
 //        table[1] = "1,";              // MIN      COLOR CODES     CLEAR CODE      EOI CODE
@@ -351,6 +351,7 @@ public class GifReader {
         while(table[intCode] != null && !table[intCode].equals("end") || start+length < binaryStream.length()) {
             System.out.println(start + " / " + binaryStream.length()); //TODO fix nullpointer after clear table
             binCode = binaryStream.substring(start, (start+length)); //Read binary value from current index
+            start = start + length; //Update index
             intCode = readVal(binCode); //turn binary value into int value
 
             System.out.print(binCode + " ");
@@ -362,7 +363,7 @@ public class GifReader {
                 if (table[intCode].equals("clear")) {
                     System.out.println("CLEAR TABLE"); //TODO clear table and rebuilding table after doesnt work properly
                     //Reinitializing table
-                    table = new String[imageHeight*imageWidth];
+                    table = new String[4096];
 
                     for(int i=0; i<colors.length; i++) {
                         table[i] = i + ",";
@@ -376,6 +377,12 @@ public class GifReader {
                     System.out.println(Arrays.toString(table));
 
                     length = orgLength;
+
+                    //read again before loop
+                    binCode = binaryStream.substring(start, start+length);
+                    start = start + length; //Update index
+                    intCode = readVal(binCode); //#1
+
                 } else {
                     textput = textput+table[intCode];
                     String K = table[intCode].substring(0,table[intCode].indexOf(",")+1); //"0,"
@@ -384,15 +391,17 @@ public class GifReader {
                 }
 
             } else { //No
-                String K = table[prevCode].substring(0,table[prevCode].indexOf(",")+1); //"0," //TODO after clear table this can become nullpointer
+                System.out.println("FIRST FREE " + nextFreeInTable);
+                System.out.println("formerly free " + table[nextFreeInTable-1]);
+                String prev = table[prevCode];
+                System.out.println(prev); //TODO after clear table this can become nullpointe
+                String K = prev.substring(0, prev.indexOf(",")+1); //"0," r
                 System.out.println("output:" + table[prevCode]+K);
                 textput = textput+table[prevCode]+K;
                 table[nextFreeInTable] = table[prevCode]+K;
                 nextFreeInTable++;
             }
 
-            //Update index
-            start = start + length;
             prevCode = intCode;
 
             //If now read code equals to 2^currentsize-1
